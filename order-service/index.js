@@ -3,6 +3,7 @@ const db = require('./db');
 const app = express();
 app.use(express.json());
 
+const axios = require('axios');
 const authMiddleware = require('./authMiddleware');
 
 const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
@@ -23,21 +24,30 @@ init();
 const jwt = require('jsonwebtoken');
 
 app.post('/orders', authMiddleware, async (req, res) => {
-    const { user_email, product_id, quantity } = req.body;
-  
-    const insertResult = await db.query(
-      'INSERT INTO orders (user_email, product_id, quantity) VALUES ($1, $2, $3) RETURNING id',
-      [user_email, product_id, quantity]
-    );
-  
-    const orderId = insertResult.rows[0].id;
-    const amount = 49.99 * quantity; // 💡 replace with product lookup later
+    const { product_id, quantity } = req.body;
+    const user_email = req.user.email; // From JWT
   
     try {
+      // 🔁 Fetch product info from product-service
+      const productResponse = await axios.get(`http://product-service:5000/products/${product_id}`);
+      const product = productResponse.data;
+      const price = product.price;
+  
+      const total_price = price * quantity;
+  
+      // Insert new order
+      const insertResult = await db.query(
+        'INSERT INTO orders (user_email, product_id, quantity) VALUES ($1, $2, $3) RETURNING id',
+        [user_email, product_id, quantity]
+      );
+  
+      const orderId = insertResult.rows[0].id;
+  
+      // Send payment request
       const response = await fetch('http://payment-service:7000/pay', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ order_id: orderId, amount }),
+        body: JSON.stringify({ order_id: orderId, amount: total_price }),
       });
   
       const result = await response.json();
@@ -47,10 +57,10 @@ app.post('/orders', authMiddleware, async (req, res) => {
   
       res.json({ order_id: orderId, payment_status: result.status });
     } catch (err) {
-      console.error("Payment failed", err);
-      res.status(500).send("Order placed, but payment failed.");
+      console.error("Order creation failed", err);
+      res.status(500).send("Order failed");
     }
-  });
+  });  
   
 
 app.get('/orders', async (req, res) => {

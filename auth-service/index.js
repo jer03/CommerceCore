@@ -4,6 +4,7 @@ const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const app = express();
 app.use(express.json());
+require('dotenv').config();
 
 const init = async () => {
   await db.query(`
@@ -16,21 +17,6 @@ const init = async () => {
 };
 init();
 
-
-// Middleware to protect routes
-const authMiddleware = (req, res, next) => {
-  const auth = req.headers.authorization;
-  if (!auth) return res.sendStatus(401); // No Authorization header
-
-  const token = auth.split(' ')[1]; // Expected format: Bearer <token>
-  try {
-    const user = jwt.verify(token, 'your_jwt_secret'); // Use same secret as in login
-    req.user = user; // attach user info to request
-    next(); // continue to route
-  } catch {
-    res.sendStatus(403); // Invalid or expired token
-  }
-};
 
 app.post('/signup', async (req, res) => {
   const { email, password } = req.body;
@@ -48,7 +34,7 @@ app.post('/login', async (req, res) => {
   const match = await bcrypt.compare(password, user.password);
   if (!match) return res.status(401).send("Wrong password");
 
-  const token = jwt.sign({ id: user.id, email: user.email }, 'your_jwt_secret');
+  const token = jwt.sign({ id: user.id, email: user.email }, process.env.JWT_SECRET);
   res.json({ token });
 });
 
